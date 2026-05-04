@@ -1,18 +1,18 @@
 from yt_dlp import YoutubeDL
 import csv
+import re
+
+def limpar_nome(nome):
+    # remove caracteres inválidos para arquivo
+    return re.sub(r'[\\/*?:"<>|]', "", nome)
 
 def montar_url(entrada):
     entrada = entrada.strip()
-
-    # se já for link completo
     if "youtube.com" in entrada:
         return entrada
-
-    # se for só ID
     return f"https://www.youtube.com/playlist?list={entrada}"
 
-
-def extrair_links_playlist(url, arquivo_saida, formato="txt"):
+def extrair_links_playlist(url, formato="txt"):
     ydl_opts = {
         "quiet": True,
         "extract_flat": True,
@@ -29,6 +29,8 @@ def extrair_links_playlist(url, arquivo_saida, formato="txt"):
             if not info or "entries" not in info:
                 print("Não foi possível ler a playlist.")
                 return
+
+            nome_playlist = limpar_nome(info.get("title", "playlist"))
 
             for entry in info["entries"]:
                 if not entry:
@@ -49,6 +51,8 @@ def extrair_links_playlist(url, arquivo_saida, formato="txt"):
         print("Nenhum vídeo encontrado.")
         return
 
+    arquivo_saida = f"{nome_playlist}.{formato}"
+
     if formato == "csv":
         with open(arquivo_saida, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
@@ -59,7 +63,7 @@ def extrair_links_playlist(url, arquivo_saida, formato="txt"):
             for titulo, link in links:
                 f.write(f"{titulo} | {link}\n")
 
-    print(f"{len(links)} vídeos salvos em {arquivo_saida}")
+    print(f"{len(links)} vídeos salvos em: {arquivo_saida}")
 
 
 if __name__ == "__main__":
@@ -72,6 +76,4 @@ if __name__ == "__main__":
     if formato not in ["txt", "csv"]:
         formato = "txt"
 
-    arquivo = f"playlist_links.{formato}"
-
-    extrair_links_playlist(url, arquivo, formato)
+    extrair_links_playlist(url, formato)
