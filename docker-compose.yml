@@ -1,0 +1,144 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # Aplicação Flask
+  # ============================================
+  web:
+    build: .
+    container_name: streamflix-web
+    restart: unless-stopped
+    ports:
+      - "${PORT:-5000}:5000"
+      - "${HTTPS_PORT:-5443}:5443"
+    environment:
+      - FLASK_ENV=production
+      - DATABASE_URL=postgresql+psycopg2://streamflix:${DB_PASSWORD:-secret}@db:5432/streamflix
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-jwt-change-me}
+      - FORCE_HTTPS=true
+      - USE_HTTPS=true
+    volumes:
+      - ./certs:/app/certs:ro
+      - app_logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - streamflix-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "https://localhost:5000/api/health", "--insecure"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # Banco de Dados PostgreSQL
+  # ============================================
+  db:
+    image: postgres:16-alpine
+    container_name: streamflix-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=streamflix
+      - POSTGRES_USER=streamflix
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-secret}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+      - ./scripts:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    networks:
+      - streamflix-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U streamflix"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Redis (Cache e Rate Limiting)
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: streamflix-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis-secret}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - streamflix-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Nginx (SSL Termination)
+  # ============================================
+  nginx:
+    image: nginx:alpine
+    container_name: streamflix-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - web
+    networks:
+      - streamflix-net
+
+  # ============================================
+  # Backup Automático
+  # ============================================
+  backup:
+    image: postgres:16-alpine
+    container_name: streamflix-backup
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=streamflix
+      - POSTGRES_USER=streamflix
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-secret}
+      - PGPASSWORD=${DB_PASSWORD:-secret}
+    volumes:
+      - ./backups:/backups
+    command: >
+      sh -c "
+      while true; do
+        echo '[BACKUP] Executando backup...'
+        pg_dump -h db -U streamflix -Fc streamflix > /backups/backup_$$(date +%Y%m%d_%H%M%S).dump
+        find /backups -name '*.dump' -mtime +7 -delete
+        echo '[BACKUP] Backup concluído. Próximo em 24h.'
+        sleep 86400
+      done
+      "
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - streamflix-net
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  app_logs:
+    driver: local
+  nginx_logs:
+    driver: local
+
+networks:
+  streamflix-net:
+    driver: bridge
