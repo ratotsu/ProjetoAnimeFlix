@@ -684,25 +684,31 @@ window.addEventListener('load', () => {
   currentAuth = savedAuth;
 
   fetch(`${API}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Authorization': `Basic ${btoa(savedAuth)}` },
-  })
-  .then(r => r.json())
-  .then(user => {
-    currentUser = user;
-    document.getElementById('userDisplayName').textContent = user.username;
-    document.getElementById('userRole').textContent = user.role.toUpperCase();
+      method: 'POST',
+      headers: { 'Authorization': `Basic ${btoa(savedAuth)}` },
+    })
+    .then(r => {
+      if (!r.ok) {
+        throw new Error('Falha na autenticação');
+      }
+      return r.json();
+    })
+    .then(user => {
+      currentUser = user;
+      document.getElementById('userDisplayName').textContent = user.username;
+      document.getElementById('userRole').textContent = user.role.toUpperCase();
 
-    if (user.role === 'root') {
-      document.getElementById('usersMenu').style.display = 'block';
-    }
+      if (user.role === 'root') {
+        document.getElementById('usersMenu').style.display = 'block';
+      }
 
-    loadAllData();
-  })
-  .catch(err => {
-    alert('Erro de autenticação!');
-    window.location.href = '/';
-  });
+      loadAllData();
+    })
+    .catch(err => {
+      alert('Erro de autenticação! ' + err.message);
+      localStorage.removeItem('streamflix_auth');
+      window.location.href = '/';
+    });
 });
 
 // ────────────────────────────────────
@@ -717,12 +723,12 @@ function switchPage(page) {
   document.querySelector(`a[onclick="switchPage('${page}')"]`).classList.add('active');
 }
 
-function switchPlaylistTab(tab) {
+function switchPlaylistTab(tab, evt) {
   document.querySelectorAll('[id^="tab-"]').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tabs .tab-btn').forEach(b => b.classList.remove('active'));
   
   document.getElementById(`tab-${tab}`).classList.add('active');
-  event.target.classList.add('active');
+  evt.classList.add('active');
 }
 
 // ────────────────────────────────────
@@ -868,7 +874,8 @@ function addVideo(e) {
     titulo: document.getElementById('inVideoTitle').value.trim(),
     descricao: document.getElementById('inVideoDesc').value.trim(),
     categoria: document.getElementById('inVideoCategory').value,
-    serie_id: document.getElementById('inVideoSerie').value || null,
+
+    serie_id: document.getElementById('inVideoSerie').value ? parseInt(document.getElementById('inVideoSerie').value) : null,
     ano: document.getElementById('inVideoYear').value.trim(),
     duracao: document.getElementById('inVideoDuration').value.trim(),
     temporada: document.getElementById('inVideoTemporada').value.trim(),
@@ -920,7 +927,6 @@ function importPlaylist(e) {
   
   const playlistUrl = document.getElementById('inPlaylistUrl').value.trim();
   const category = document.getElementById('inPlaylistCategory').value;
-  const temporada = document.getElementById('inPlaylistTemporada').value.trim();
   const episodioInicio = parseInt(document.getElementById('inPlaylistEpisodioInicio').value) || null;
 
   if (!playlistUrl) {
@@ -928,7 +934,8 @@ function importPlaylist(e) {
     return;
   }
 
-  const activeTab = document.querySelector('.tab-content.active');
+    const activeTab = document.querySelector('.tab-content.active');
+  const temporada = document.getElementById('inPlaylistTemporada').value.trim();
   let payload = {
     playlist_url: playlistUrl,
     categoria: category,
